@@ -33,7 +33,19 @@ class HTTPResponse(object):
         self.body = body
 
 class HTTPClient(object):
-    #def get_host_port(self,url):
+    def get_host_port_path(self,url):
+        """
+        Parse URL into components, and return host, port, path
+        """
+        o = urllib.parse.urlparse(url)
+        host = o.netloc.split(":")[0]
+        port = o.port if o.port else 80
+        path = o.path if o.path else "/"
+        if o.query:
+            path += '?' 
+            path += o.query
+
+        return (host, port, path)
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -41,13 +53,15 @@ class HTTPClient(object):
         return None
 
     def get_code(self, data):
-        return None
+        code = data.split()[1]
+        return int(code)
 
     def get_headers(self,data):
         return None
 
     def get_body(self, data):
-        return None
+        body = data.split('\r\n\r\n')[1]
+        return body
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
@@ -68,13 +82,41 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        code = 500
-        body = ""
+        host, port, path = self.get_host_port_path(url)
+        self.connect(host, port)
+        payload = f'GET {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\nAccept:*/*\r\n\r\n'
+
+        self.sendall(payload)
+        response = self.recvall(self.socket)
+        
+        code = self.get_code(response)
+        body = self.get_body(response)
+        
+        self.close()
+        
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 500
-        body = ""
+        host, port, path = self.get_host_port_path(url)
+        self.connect(host, port)
+
+        payload = f'POST {path} HTTP/1.0\r\nHost: {host}\r\nAccept:*/*\r\n'
+        content =''
+        if args:
+            content = urllib.parse.urlencode(args)
+            payload += f'Content-Length: {len(content)}\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\n'
+        else:
+            payload += 'Content-Length: 0\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\n'
+        payload += content
+        
+        self.sendall(payload)
+        response = self.recvall(self.socket)
+
+        code = self.get_code(response)
+        body = self.get_body(response)
+
+        self.close()
+
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
